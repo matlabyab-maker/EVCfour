@@ -2,7 +2,7 @@
 
 Repository: `EVCfour`  
 Application label: `EVCfour`  
-Project version: `0.2.189` (`versionCode 389`)
+Project version: `0.2.190` (`versionCode 389`)
 
 ## Project setup
 

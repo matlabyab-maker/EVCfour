@@ -187,8 +187,8 @@ class MainActivity : Activity() {
             "۳. انتخاب تکه‌های چسبیده",
             "۴. اعمال زمان",
             "۵. Split",
-            "۶. خروجی تغییرات",
-            "۷. Original Output (خروجی اصلی)",
+            "۶. خروجی هوشمند",
+            "۷. برش و تقسیم (تنظیمات خروجی اصلی)",
             "۸. انتخاب همه",
             "۹. Select Invert (معکوس‌کردن انتخاب)",
             "۱۰. لغو انتخاب",
@@ -246,7 +246,7 @@ class MainActivity : Activity() {
             findViewById<Button>(R.id.autoColorButton).text = if (autoColorEnabled) "Auto Color: روشن" else "Auto Color"
             statusText.post {
                 statusText.text = if (autoColorEnabled)
-                    "Auto Color روشن شد؛ رنگ‌آمیزی تقریبی بر اساس روشنایی تصویر در «خروجی تغییرات» اعمال می‌شود. تشخیص معنایی آسمان/درخت/صورت با مدل هوش مصنوعی انجام نمی‌شود."
+                    "Auto Color روشن شد؛ رنگ‌آمیزی تقریبی بر اساس روشنایی تصویر در «خروجی هوشمند» اعمال می‌شود. تشخیص معنایی آسمان/درخت/صورت با مدل هوش مصنوعی انجام نمی‌شود."
                 else "Auto Color خاموش شد"
             }
         }
@@ -297,7 +297,7 @@ class MainActivity : Activity() {
                 placementMode = PlacementOverlayView.Mode.NONE
                 placementOverlay.visibility = View.GONE
                 findViewById<View>(R.id.overlayVideoPanel).visibility = View.GONE
-                statusText.text = "جایگاه و اندازهٔ ویدیوی رویی خودکار ثبت شد؛ در حال رفتن به خروجی تغییرات…"
+                statusText.text = "جایگاه و اندازهٔ ویدیوی رویی خودکار ثبت شد؛ در حال رفتن به خروجی هوشمند…"
                 findViewById<Button>(R.id.outputChangesButton).performClick()
             }
         })
@@ -314,7 +314,7 @@ class MainActivity : Activity() {
             freeCropMode = false
             cropOverlay.visibility = View.GONE
             freeCropControls.visibility = View.GONE
-            statusText.text = "محدودهٔ Free Crop ثبت شد: چپ $cropLeftPct٪، بالا $cropTopPct٪، راست $cropRightPct٪، پایین $cropBottomPct٪؛ برای ساخت فایل نهایی، دکمهٔ «خروجی تغییرات» را بزنید"
+            statusText.text = "محدودهٔ Free Crop ثبت شد: چپ $cropLeftPct٪، بالا $cropTopPct٪، راست $cropRightPct٪، پایین $cropBottomPct٪؛ برای ساخت فایل نهایی، دکمهٔ «خروجی هوشمند» را بزنید"
             Toast.makeText(this, "محدودهٔ برش آزاد ثبت شد", Toast.LENGTH_SHORT).show()
         }
         findViewById<Button>(R.id.outputFormatButton).setOnClickListener {
@@ -1024,7 +1024,7 @@ class MainActivity : Activity() {
             overlayVideoUri = uri
             findViewById<Button>(R.id.pickOverlayVideoButton).text = "ویدیوی رویی ✓"
             showOverlayVideoPreview(uri)
-            statusText.text = "ویدیوی رویی روی پلیر قرار گرفت؛ کادر را بکشید یا گوشه‌ها را تغییر دهید. با برداشتن لمس، تنظیمات ثبت و خروجی تغییرات اجرا می‌شود"
+            statusText.text = "ویدیوی رویی روی پلیر قرار گرفت؛ کادر را بکشید یا گوشه‌ها را تغییر دهید. با برداشتن لمس، تنظیمات ثبت و خروجی هوشمند اجرا می‌شود"
             activatePlacementMode(PlacementOverlayView.Mode.VIDEO)
         } else if (requestCode == PICK_REFERENCE_IMAGE) {
             referenceImageUri = data.data ?: return
@@ -3690,7 +3690,7 @@ class MainActivity : Activity() {
             cropOverlay.visibility = View.VISIBLE
             freeCropControls.visibility = View.VISIBLE
             cropSettingsSaved = false
-            statusText.text = "Free Crop فعال است: چهار دستگیرهٔ گوشهٔ کادر را روی پلیر بکشید؛ سپس «ثبت محدوده» را بزنید و برای فایل نهایی از «خروجی تغییرات» استفاده کنید"
+            statusText.text = "Free Crop فعال است: چهار دستگیرهٔ گوشهٔ کادر را روی پلیر بکشید؛ سپس «ثبت محدوده» را بزنید و برای فایل نهایی از «خروجی هوشمند» استفاده کنید"
         } else {
             cropOverlay.visibility = View.GONE
             freeCropControls.visibility = View.GONE
@@ -3852,13 +3852,41 @@ class MainActivity : Activity() {
             text.isNotEmpty() || secondUri != null || audioUri != null || subtitleUri != null || globalColorChanged || autoColorEnabled
         val hasTimelineEdits = selectedTimelineRange != null || timelineSplitPoints.isNotEmpty() || deletedTimelineRanges.isNotEmpty()
         val hasStoryboardEdits = selectedFrames.isNotEmpty() || deletedStoryboardFrames.isNotEmpty()
+        // Surviving source-time intervals are applied inside the same FFmpeg graph as visual effects.
+        val timelineOutputRanges: List<Pair<Long, Long>> = if (!hasTimelineEdits || videoDurationMs <= 0L) {
+            emptyList()
+        } else if (selectedTimelineRange != null) {
+            listOf(selectedTimelineRange!!.first.coerceIn(0L, videoDurationMs) to selectedTimelineRange!!.second.coerceIn(0L, videoDurationMs))
+                .filter { it.second > it.first }
+        } else {
+            val deleted = deletedTimelineRanges.map { it.first.coerceIn(0L, videoDurationMs) to it.second.coerceIn(0L, videoDurationMs) }
+                .filter { it.second > it.first }.sortedBy { it.first }
+            val merged = deleted.fold(mutableListOf<Pair<Long, Long>>()) { acc, range ->
+                if (acc.isNotEmpty() && range.first <= acc.last().second) {
+                    val previous = acc.removeAt(acc.lastIndex)
+                    acc.add(previous.first to max(previous.second, range.second))
+                } else acc.add(range)
+                acc
+            }
+            val kept = mutableListOf<Pair<Long, Long>>()
+            var cursorMs = 0L
+            for (range in merged) {
+                if (range.first > cursorMs) kept.add(cursorMs to range.first)
+                cursorMs = max(cursorMs, range.second)
+            }
+            if (cursorMs < videoDurationMs) kept.add(cursorMs to videoDurationMs)
+            if (deleted.isEmpty() && timelineSplitPoints.isNotEmpty()) {
+                val boundaries = (listOf(0L) + timelineSplitPoints.filter { it > 0L && it < videoDurationMs } + listOf(videoDurationMs)).distinct().sorted()
+                boundaries.zipWithNext()
+            } else kept
+        }
         val cropChangedForText = cropSettingsSaved && (cropLeftPct > 0 || cropTopPct > 0 || cropRightPct > 0 || cropBottomPct > 0)
         val hasNonTextEdits = cropChangedForText || secondUri != null || audioUri != null || subtitleUri != null || globalColorChanged || autoColorEnabled
 
         // Text-only output is independent of timeline cuts/splits. It deliberately exports
         // the original full source with the text burned in, without silently applying or
         // discarding other pending visual/audio/storyboard edits.
-        if (text.isNotEmpty() && !hasNonTextEdits && !hasStoryboardEdits &&
+        if (text.isNotEmpty() && !hasNonTextEdits && !hasStoryboardEdits && !hasTimelineEdits &&
             trackClips.isEmpty() && frameColorProfiles.isEmpty() && videoDurationMs > 0L) {
             exportTextOnlyWithTransformer(
                 sourceUri, text, liveTextSize.coerceIn(8, 160),
@@ -3892,8 +3920,12 @@ class MainActivity : Activity() {
             exportColorizedVideo()
             return
         }
-        if (hasTimelineEdits && hasCombinedEdits) {
-            Toast.makeText(this, "برش‌های نوار زمان هنوز با افکت‌های تصویری/صدا در یک فیلتر واحد ترکیب نشده‌اند؛ ابتدا برش‌های نوار زمان را بازنشانی کنید یا فقط خروجی برش را بگیرید.", Toast.LENGTH_LONG).show()
+        if (hasTimelineEdits && hasCombinedEdits && timelineOutputRanges.isEmpty()) {
+            Toast.makeText(this, "بازهٔ معتبری برای خروجی از نوار زمان باقی نمانده است", Toast.LENGTH_LONG).show()
+            return
+        }
+        if (hasTimelineEdits && subtitleUri != null) {
+            Toast.makeText(this, "ترکیب زیرنویس خارجی با برش‌های نوار زمان هنوز زمان‌بندی زیرنویس را بازتنظیم نمی‌کند؛ برای جلوگیری از زیرنویس ناهماهنگ، ابتدا زیرنویس را جداگانه صادر کنید.", Toast.LENGTH_LONG).show()
             return
         }
         if (hasStoryboardEdits && hasCombinedEdits) {
@@ -3937,8 +3969,39 @@ class MainActivity : Activity() {
 
                 // Audio/subtitle-only exports must not touch the video bitstream. Use FFmpeg
                 // stream copy unless a real visual edit requires filtering/re-encoding.
+                val sourceHasAudio = run {
+                    val extractor = MediaExtractor()
+                    try {
+                        extractor.setDataSource(baseFile.absolutePath)
+                        (0 until extractor.trackCount).any { index ->
+                            extractor.getTrackFormat(index).getString(MediaFormat.KEY_MIME)?.startsWith("audio/") == true
+                        }
+                    } finally { extractor.release() }
+                }
                 val graph = mutableListOf<String>()
                 var current = "0:v"
+                val timelineWasApplied = hasTimelineEdits && timelineOutputRanges.isNotEmpty()
+                if (timelineWasApplied) {
+                    val videoLabels = mutableListOf<String>()
+                    val audioLabels = mutableListOf<String>()
+                    timelineOutputRanges.forEachIndexed { index, range ->
+                        val startSec = String.format(java.util.Locale.US, "%.6f", range.first / 1000.0)
+                        val endSec = String.format(java.util.Locale.US, "%.6f", range.second / 1000.0)
+                        val videoLabel = "evc_vcut_$index"
+                        graph.add("[0:v:0]trim=start=$startSec:end=$endSec,setpts=PTS-STARTPTS[$videoLabel]")
+                        videoLabels.add("[$videoLabel]")
+                        if (audioIndex == null && sourceHasAudio) {
+                            val audioLabel = "evc_acut_$index"
+                            graph.add("[0:a:0]atrim=start=$startSec:end=$endSec,asetpts=PTS-STARTPTS[$audioLabel]")
+                            audioLabels.add("[$audioLabel]")
+                        }
+                    }
+                    graph.add(videoLabels.joinToString("") + "concat=n=${videoLabels.size}:v=1:a=0[evc_timeline_video]")
+                    current = "evc_timeline_video"
+                    if (audioLabels.isNotEmpty()) {
+                        graph.add(audioLabels.joinToString("") + "concat=n=${audioLabels.size}:v=0:a=1[evc_timeline_audio]")
+                    }
+                }
                 if (requiresVideoReencode && cropChanged) {
                     val widthPct = (100 - cropLeftPct - cropRightPct).coerceIn(10, 100)
                     val heightPct = (100 - cropTopPct - cropBottomPct).coerceIn(10, 100)
@@ -3982,7 +4045,7 @@ class MainActivity : Activity() {
                     graph.add("[$current]$draw[evc_text]")
                     current = "evc_text"
                 }
-                if (requiresVideoReencode) {
+                if (requiresVideoReencode || timelineWasApplied) {
                     args.addAll(listOf("-filter_complex", graph.joinToString(";"), "-map", "[$current]"))
                     args.addAll(listOf("-c:v", "libx264", "-preset", "ultrafast", "-tune", "fastdecode", "-threads", "1", "-crf", "20", "-pix_fmt", "yuv420p"))
                 } else {
@@ -3992,6 +4055,13 @@ class MainActivity : Activity() {
                 if (audioIndex != null) {
                     // Only the selected audio is encoded if needed; the video remains stream-copied.
                     args.addAll(listOf("-map", "$audioIndex:a:0", "-af", "apad", "-c:a", "aac", "-b:a", "192k", "-shortest"))
+                } else if (timelineWasApplied) {
+                    // Cut audio on the same source-time intervals, then concatenate and encode it.
+                    if (graph.any { it.contains("[evc_timeline_audio]") }) {
+                        args.addAll(listOf("-map", "[evc_timeline_audio]", "-c:a", "aac", "-b:a", "192k"))
+                    } else {
+                        args.addAll(listOf("-map", "0:a?", "-c:a", "aac", "-b:a", "192k"))
+                    }
                 } else if (requiresVideoReencode) {
                     // Keep the legacy compatible audio encode only when the image is being rendered.
                     args.addAll(listOf("-map", "0:a?", "-c:a", "aac", "-b:a", "192k"))
@@ -4007,7 +4077,7 @@ class MainActivity : Activity() {
                 args.addAll(listOf("-max_muxing_queue_size", "1024", "-f", if (outputContainerMatroska) "matroska" else "mp4", output.absolutePath))
                 val session = FFmpegKit.executeWithArguments(args.toTypedArray())
                 if (!ReturnCode.isSuccess(session.returnCode) || !output.exists() || output.length() == 0L) {
-                    throw IllegalStateException("ساخت خروجی تغییرات ناموفق بود: ${session.allLogsAsString.takeLast(1600)}")
+                    throw IllegalStateException("ساخت خروجی هوشمند ناموفق بود: ${session.allLogsAsString.takeLast(1600)}")
                 }
             } catch (e: Exception) {
                 error = e.message ?: e.javaClass.simpleName
@@ -4019,7 +4089,7 @@ class MainActivity : Activity() {
                 button.isEnabled = true
                 val result = output
                 if (result == null || !result.exists() || result.length() == 0L) {
-                    statusText.text = "خروجی تغییرات ناموفق بود: ${error ?: "خطای ناشناخته"}"
+                    statusText.text = "خروجی هوشمند ناموفق بود: ${error ?: "خطای ناشناخته"}"
                     Toast.makeText(this, statusText.text, Toast.LENGTH_LONG).show()
                     result?.delete()
                     return@post
@@ -4041,21 +4111,22 @@ class MainActivity : Activity() {
                     if (android.os.Build.VERSION.SDK_INT >= 29) contentResolver.update(outUri, ContentValues().apply { put(MediaStore.Video.Media.IS_PENDING, 0) }, null, null)
                     result.delete()
                     val applied = mutableListOf<String>()
+                    if (timelineWasApplied) applied.add("برش‌های نوار زمان")
                     if (cropSettingsSaved && (cropLeftPct > 0 || cropTopPct > 0 || cropRightPct > 0 || cropBottomPct > 0)) applied.add("Crop")
                     applied.add("رنگ")
                     if (text.isNotEmpty()) applied.add("متن")
                     if (secondUri != null) applied.add("ویدیوی رویی")
                     if (audioUri != null) applied.add("صدای جایگزین")
                     if (subtitleUri != null) applied.add("زیرنویس")
-                    statusText.text = if (!requiresVideoReencode) {
+                    statusText.text = if (!requiresVideoReencode && !timelineWasApplied) {
                         "خروجی (${applied.joinToString("، ")}) در Movies/EVC ذخیره شد؛ کدک ویدیوی اصلی بدون رمزگذاری مجدد حفظ شد."
                     } else {
                         "خروجی مشترک (${applied.joinToString("، ")}) در Movies/EVC ذخیره شد؛ برای اعمال تغییرات تصویری، ویدیو دوباره رمزگذاری شد."
                     }
-                    Toast.makeText(this, "خروجی تغییرات در Movies/EVC ذخیره شد", Toast.LENGTH_LONG).show()
+                    Toast.makeText(this, "خروجی هوشمند در Movies/EVC ذخیره شد", Toast.LENGTH_LONG).show()
                 } catch (e: Exception) {
                     result.delete()
-                    statusText.text = "ذخیرهٔ خروجی تغییرات ناموفق بود: ${e.message ?: "خطا"}"
+                    statusText.text = "ذخیرهٔ خروجی هوشمند ناموفق بود: ${e.message ?: "خطا"}"
                     Toast.makeText(this, statusText.text, Toast.LENGTH_LONG).show()
                 }
             }
